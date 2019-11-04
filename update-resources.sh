@@ -1,9 +1,18 @@
 #! /bin/bash
-git pull --quiet
-git submodule --quiet foreach git pull --quiet
-bin/uaparser ua-parser:update
-if phpunit --stop-on-failure &> /dev/null; then
-    git commit --quiet -a -m "Scheduled resource update" && git push --quiet origin master
-else
-    echo "Could not update resources"
-fi
+
+function try_catch() {
+    output=`$@ &>/dev/stdout`
+    if [ $? -gt 0 ]; then
+        echo -e "Command $@ failed\n\n$output"
+        exit 1
+    fi
+}
+
+try_catch git pull
+try_catch git submodule foreach git pull
+try_catch bin/uaparser ua-parser:update
+try_catch vendor/bin/phpunit --stop-on-failure
+git commit --quiet -a -m "Scheduled resource update"
+git push --quiet origin master && \
+new_version=`git tag | sort --version-sort | tail -n 1 | awk -F. -v OFS=. 'NF==1{print ++$NF}; NF>1{if(length($NF+1)>length($NF))$(NF-1)++; $NF=sprintf("%0*d", length($NF), ($NF+1)%(10^length($NF))); print}'` && \
+git tag $new_version && git push origin $new_version
